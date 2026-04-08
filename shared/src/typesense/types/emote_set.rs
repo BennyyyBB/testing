@@ -15,6 +15,8 @@ pub struct EmoteSet {
 	pub description: Option<String>,
 	pub tags: Vec<String>,
 	pub emotes: Vec<EmoteId>,
+	pub emotes_last_used_at: Vec<i64>,
+	//field stores usage data for emotes in set, allows typesense to sort by recency of use
 	pub capacity: Option<i32>,
 	pub owner_id: Option<UserId>,
 	pub origins: Vec<EmoteSetId>,

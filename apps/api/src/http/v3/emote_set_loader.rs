@@ -42,7 +42,9 @@ pub async fn load_emote_set<'a>(
 	Ok(emote_set_emotes.into_iter().filter_map(move |emote_set_emote| {
 		let emote = emotes.get(emote_set_emote.id).cloned()?;
 		let owner = users.get(&emote.owner_id).cloned();
-		let partial = EmotePartialModel::from_db(emote, owner, &global.config.api.cdn_origin);
+		let mut partial = EmotePartialModel::from_db(emote, owner, &global.config.api.cdn_origin);
+		// ensuring EmotePartialModel has field for metadata
+		// suppose EmotePartialModel has field "pushed_by_set_data" or similar
 
 		Some((emote_set_emote, partial))
 	}))

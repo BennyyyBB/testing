@@ -32,6 +32,8 @@ pub struct Emote {
 	pub score_top_monthly: i32,
 	#[typesense(default_sort)]
 	pub score_top_all_time: i32,
+	pub usage_count_month: i32,
+	pub last_used_at_global: i64,
 	pub deleted: bool,
 	pub created_at: i64,
 	pub updated_at: i64,
@@ -60,6 +62,9 @@ impl From<database::emote::Emote> for Emote {
 			score_top_daily: value.scores.top_daily,
 			score_top_weekly: value.scores.top_weekly,
 			score_top_monthly: value.scores.top_monthly,
+			usage_count_month: value.usage_count_month,
+			// assuming this exists in database::emote
+			last_used_at_global: value.last_used_at_global.timestamp_millis(),
 			score_trending_day: value.scores.trending_day,
 			score_trending_week: value.scores.trending_week,
 			score_trending_month: value.scores.trending_month,
