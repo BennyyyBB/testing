@@ -13,6 +13,7 @@ use crate::http::error::{ApiError, ApiErrorCode};
 use crate::http::guards::{PermissionGuard, RateLimitGuard};
 use crate::http::middleware::session::Session;
 use crate::http::v4::gql::types::EmoteSet;
+use crate::http::v4::gql::types::{EmoteSetCopyResult};
 use crate::http::validators::{NameValidator, TagsValidator};
 use crate::transactions::{transaction, TransactionError};
 
@@ -176,5 +177,26 @@ impl EmoteSetMutation {
 				))
 			}
 		}
+	}
+
+	#[graphql(
+		guard = "PermissionGuard::one(EmoteSetPermission::Manage)
+				.and(RateLimitGuard::new(RateLimitResource::EmoteSetCopy, 1))"
+	)]
+	#[tracing::instrument(skip_all, name = "EmoteSetMutation::clone_emote_set")]
+	async fn clone_emote_set(
+		&self,
+		ctx: &Context<'_>,
+		id: EmoteSetId
+		#[graphql(validator(custom = "NameValidator"))] name: String,
+		#[graphql(validator(custom = "TagsValidator"))] tags: Vec<String>,
+		owner_id: Option<UserId>,
+		#[graphql(default = false)] override_conflicts: bool,
+	)	-> Result<EmoteSetCopyResult, ApiError> {
+		let created = self.create(ctx, name, tags, owner_id).await?;
+		let op = operation::EmoteSetOperation {
+			emote_set: created.clone().into_db(),
+		};
+		op.copy_from(ctx, id, override_conflicts).await
 	}
 }

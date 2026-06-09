@@ -22,6 +22,7 @@ use crate::http::error::{ApiError, ApiErrorCode};
 use crate::http::guards::{PermissionGuard, RateLimitGuard};
 use crate::http::middleware::session::Session;
 use crate::http::v4::gql::types::{Emote, EmoteSet, EmoteSetEmote};
+use crate::http::v4::gql::types::{EmoteSetCopyEntry, EmoteSetCopyResult, EmoteSetCopyStatus};
 use crate::http::validators::{EmoteAliasValidator, NameValidator, TagsValidator};
 use crate::transactions::{transaction_with_mutex, GeneralMutexKey, TransactionError};
 
@@ -1259,5 +1260,155 @@ impl EmoteSetOperation {
 				))
 			}
 		}
+	}
+
+	#[graphql(
+		guard = "PermissionGuard::one(EmoteSetPermission::Manage).and(RateLimitGuard::new(RateLimitResource::EmoteSetChange, 1))"
+	)]
+	#[tracing::instrument(skip_all, name = "EmoteSetOperation::copy_from")]
+	async fn copy_from(
+		&self,
+		ctx: &Context<'_>,
+		source_id: shared::database::emote_set::EmoteSetId
+		#[graphql(default = false)] overrise_conflicts:bool,
+	) -> Result<EmoteSetCopyResult, ApiError> {
+		let global: &Arc<Global> = ctx
+			.data()
+			.map_err(|_| ApiError::internal_server_error(ApiErrorCode::MissingContext, "missing global data"))?;
+		let session = ctx
+			.data::<Session>()
+			.map_err(|_| ApiError::internal_server_error(ApiErrorCode::MissingContext, "missing session data"))?;
+
+		self.check_perms(global, session, EditorEmoteSetPermission::Manage).await?;
+
+		if source_id == self.emote_set.id {
+			return Err(ApiError::bad_request(
+				ApiErrorCode::BadRequest,
+				"source and target emote set are identical",
+			));
+		}
+
+		let source_set = global
+			.emote_set_by_id_loader
+			.load(source_id)
+			.await
+			.map_err(|()| ApiError::internal_server_error(ApiErrorCode::LoadError, "failed to load source emote set"))?
+			.ok_or_else(|| ApiError::not_found(ApiErrorCode::LoadError, "source emote set not found"))?;
+		let target_emote_ids: std::collections::HashSet<EmoteId> =
+			self.emote_set.emotes.iter().map(|e| e.id).collect();
+		let mut target_aliases: std::collections::HashSet<String> =
+			self.emote_set.emotes.iter().map(|e| e.alias.clone()).collect();
+
+		let mut remaining_capacity: i32 = (self.emote_set.capacity.unwrap_or(0) as i32)
+			- (self.emote_set.emotes.len() as i32);
+		
+		let mut entries: Vec<EmoteSetCopyEntry> = Vec::with_capacity(source.emotes.len());
+		let mut copied: u32 = 0;
+
+		for src in &source_emotes {
+			if target_emote_ids.contains(&src.id) {
+				entries.push(EmoteSetCopyEntry {
+					emote_id: src.id,
+					alias: src.alias.clone(),
+					status: EmoteSetCopyStatus::SkippedDuplicateId,
+					reason: None,
+				});
+				continue;
+			}
+			if !overrise_conflicts && target_aliases.contains(&src.id) {
+				entries.push(EmoteSetCopyEntry {
+					emote_id: src.id,
+					alias: src.alias.clone(),
+					status: EmoteSetCopyStatus::SkippedDuplicateAlias,
+					reason: Some(format!("alias '{}' already exists in target set", src.alias)),
+				});
+				continue;
+			}
+
+			if remaining_capacity <= 0 {
+				entries.push(EmoteSetCopyEntry {
+					emote_id: src.id,
+					alias: src.alias.clone(),
+					status: EmoteSetCopyStatus::SkippedCapacity,
+					reason: Some("target emote set is at capacity".into()),
+				});
+				continue;
+			}
+
+			let db_emote = match global.emote_by_id_loader.load(src.id).await {
+				Ok(Some(emote)) => emote,
+				Ok(None) | Err(_) => {
+					entries.push(EmoteSetCopyEntry {
+						emote_id: src.id,
+						alias: src.alias.clone(),
+						status: EmoteSetCopyStatus::SkippedUnavailable,
+						reason: Some("source emote not found".into()),
+					});
+					continue;
+				}
+			};
+			if db_emote.deleted || db_emote.merged.is_some() {
+					entries.push(EmoteSetCopyEntry {
+						emote_id: src.id,
+						alias: src.alias.clone(),
+						status: EmoteSetCopyStatus::SkippedUnavailable,
+						reason: Some("source emote is deleted or merged".into()),
+					});
+					continue;
+			}
+			if db_emote.flags.contains(EmoteFlags::Private)
+				&& self.emote_set.owner_id.is_none_or(|id| db_emote.owner_id != id)
+			{
+					entries.push(EmoteSetCopyEntry {
+						emote_id: src.id,
+						alias: src.alias.clone(),
+						status: EmoteSetCopyStatus::SkippedPrivate,
+						reason: Some("source emote is private to another user".into()),
+					});
+					continue;
+			}
+			match self
+				.add_emote_inner(
+					global,
+					session,
+					EmoteSetEmoteId {emote_id: src.id,alias: Some(src.alias.clone())},
+					Some(src.flags.contains(EmoteSetEmoteFlag::ZeroWidth)),
+					Some(overrise_conflicts),
+				)
+				.await
+			{
+				Ok(_) => {
+					copied += 1;
+					target_aliases.insert(src.alias.clone());
+					entries.push(EmoteSetCopyEntry {
+						emote_id: src.id,
+						alias: src.alias.clone(),
+						status: EmoteSetCopyStatus::Copied,
+						reason: None,
+					});
+				}
+				Err(err) => {
+					entries.push(EmoteSetCopyEntry {
+						emote_id: src.id,
+						alias: src.alias.clone(),
+						status: EmoteSetCopyStatus::Failed,
+						reason: Some(err.message().to_string()),
+					});
+				}
+			}
+		}
+
+		let refreshed = global
+			.emote_set_by_id_loader
+			.load(self.emote_set.id)
+			.await
+			.map_err(|()| ApiError::internal_server_error(ApiErrorCode::LoadError, "failed to reload target emote set"))?
+			.ok_or_else(|| ApiError::not_found(ApiErrorCode::LoadError, "target emote set not found"))?;
+		
+		OK(EmoteSetCopyResult {
+			emote_set: EmoteSet::from_db(refreshed),
+			copied,
+			entries,
+		})
 	}
 }
