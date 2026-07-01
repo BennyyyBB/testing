@@ -462,6 +462,7 @@ pub enum RateLimitResource {
 	EmoteUpdate,
 	EmoteSetCreate,
 	EmoteSetChange,
+	EmoteSetCopy
 	EgVaultSubscribe,
 	EgVaultRedeem,
 	EgVaultPaymentMethod,

@@ -47,10 +47,10 @@ pub struct EmoteSetCopyResult {
 
 #[derive(async_graphql::SimpleObject, Debug, Clone)]
 pub struct EmoteSetCopyEntry {
-    pub emote_id: EmoteId,
-    pub alias: String,
-    pub status: EmoteSetCopyStatus,
-    pub reason: Option<String>,
+	pub emote_id: EmoteId,
+	pub alias: String,
+	pub status: EmoteSetCopyStatus,
+	pub reason: Option<String>,
 }
 
 #[derive(async_graphql::Enum, Copy, Clone, Eq, PartialEq, Debug)]
