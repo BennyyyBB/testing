@@ -462,7 +462,7 @@ pub enum RateLimitResource {
 	EmoteUpdate,
 	EmoteSetCreate,
 	EmoteSetChange,
-	EmoteSetCopy
+	EmoteSetCopy,
 	EgVaultSubscribe,
 	EgVaultRedeem,
 	EgVaultPaymentMethod,
@@ -483,6 +483,7 @@ impl RateLimitResource {
 			Self::EmoteUpdate => "emote_update",
 			Self::EmoteSetCreate => "emote_set_create",
 			Self::EmoteSetChange => "emote_set_change",
+			Self::EmoteSetCopy => "emote_set_copy",
 			Self::EgVaultSubscribe => "egvault_subscribe",
 			Self::EgVaultRedeem => "egvault_redeem",
 			Self::EgVaultPaymentMethod => "egvault_payment_method",

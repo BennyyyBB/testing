@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
+	import { user } from "$/lib/auth";
+	import { gqlClient } from "$/lib/gql";
 	import Dialog, { type DialogMode } from "./dialog.svelte";
 	import Button from "../input/button.svelte";
 	import TextInput from "../input/text-input.svelte";
@@ -22,15 +24,25 @@
 	let result: { copied: number; skipped: number } | null = $state(null);
 
 	async function gql(query: string, variables: Record<string, unknown>) {
-		const res = await fetch("/api/gql", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			credentials: "include",
-			body: JSON.stringify({ query, variables }),
-		});
-		const json = await res.json();
-		if (json.errors?.length) throw new Error(json.errors[0].message);
-		return json.data;
+		if (!$user) {
+			throw new Error("You need to be logged in to copy or clone Emote Sets.");
+		}
+
+		const res = await gqlClient()
+			.mutation(query as any, variables)
+			.toPromise();
+
+		if (res.error) {
+			if (res.error.networkError) {
+				throw new Error("Network error. Please check your connection and try again.");
+			}
+			if (res.error.graphQLErrors.length > 0) {
+				throw new Error(res.error.graphQLErrors[0].message);
+			}
+			throw new Error("An unknown error occurred.");
+		}
+
+		return res.data;
 	}
 
 	const CLONE_MUTATION = `
@@ -74,6 +86,30 @@
 			}
 		}
 	`;
+
+	function mapApiError(message: string, isMerge: boolean): string {
+		const lower = message.toLowerCase();
+		if (
+			lower.includes("lacking privileges") ||
+			lower.includes("forbidden") ||
+			lower.includes("permission")
+		) {
+			if (isMerge) {
+				return "You don\'t have permission to add emotes to this set. You need to be an editor of the target set\'s owner.";
+			}
+			return "You don\'t have permission to perform this action.";
+		}
+		if (lower.includes("not found")) {
+			return "The target Emote Set could not be found. Please check the ID.";
+		}
+		if (lower.includes("capacity")) {
+			return "The target Emote Set is at full capacity.";
+		}
+		if (lower.includes("identical")) {
+			return "Source and target Emote Set cannot be the same.";
+		}
+		return message;
+	}
 
 	async function submit() {
 		if (loading) return;
@@ -154,18 +190,21 @@
 			>
 				Clone as new set
 			</button>
-			<button
-				type="button"
-				role="tab"
-				aria-selected={copyMode === "merge"}
-				class:active={copyMode === "merge"}
-				onclick={() => (copyMode = "merge")}
-			>
-				Add to existing set
-			</button>
+			<!-- Merge-Tab only  -->
+			{#if $user}
+				<button
+					type="button"
+					role="tab"
+					aria-selected={copyMode === "merge"}
+					class:active={copyMode === "merge"}
+					onclick={() => (copyMode = "merge")}
+				>
+					Add to existing set
+				</button>
+			{/if}
 		</div>
 
-		{#if copyMode === "clone"}
+		{#if copyMode === "clone" || !$user}
 			<TextInput
 				placeholder="e.g. My Set (Copy)"
 				bind:value={newName}
