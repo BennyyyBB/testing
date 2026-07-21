@@ -907,11 +907,13 @@
 				"used_by_channels": "Kanäle, die dieses Emote nutzen",
 				"channels_tooltip": "Anzahl der Kanäle, die dieses Emote aktuell in einem ihrer Emote-Sets aktiv gesetzt haben.",
 				"trending_this_week": "Trending-Rang diese Woche",
-				"trending_tooltip": "Position unter den Top ~500 Emotes von 7TV nach aktuellem Wachstum.",
+				"trending_tooltip": "Live-Position nach aktuellem Wachstum unter den Top 500 Emotes.",
 				"top_all_time": "Top-Rang aller Zeiten",
-				"top_all_time_tooltip": "Position unter den Top ~500 Emotes von 7TV nach gesamter Netto-Kanalverbreitung.",
+				"top_all_time_tooltip": "Live-Position nach gesamter Netto-Kanalverbreitung unter den Top 500 Emotes.",
 				"not_ranked": "Aktuell nicht gerankt",
-				"raw_score": "Wachstums-Score: {score}",
+				"trending_list_empty": "Keine Emotes gefunden.",
+				"trending_list_error": "Liste konnte nicht geladen werden.",
+				"trending_list_load_more": "Mehr laden",
 				"stats_error": "Kanal-/Ranking-Statistiken konnten nicht geladen werden.",
 				"usage_note": "7TV erfasst nicht, wie oft ein Emote tatsächlich im Chat gesendet wird. Die Zahlen oben zeigen, wie viele Kanäle dieses Emote hinzugefügt haben und wie es in den Trending-/Top-Listen von 7TV abschneidet."
 			}

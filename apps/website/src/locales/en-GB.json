@@ -908,11 +908,13 @@
 				"used_by_channels": "Channels using this emote",
 				"channels_tooltip": "Number of channels that currently have this emote active in one of their emote sets.",
 				"trending_this_week": "Trending rank this week",
-				"trending_tooltip": "Position among 7TV's top ~500 emotes by recent growth.",
+				"trending_tooltip": "Live position by recent growth under the top 500 emotes.",
 				"top_all_time": "Top rank all-time",
-				"top_all_time_tooltip": "Position among 7TV's top ~500 emotes by total net channel adoption.",
+				"top_all_time_tooltip": "Live position by total net channel adoption under the top 500 emotes.",
 				"not_ranked": "Not currently ranked",
-				"raw_score": "Growth score: {score}",
+				"trending_list_empty": "No emotes found.",
+				"trending_list_error": "Couldn't load the list.",
+				"trending_list_load_more": "Load more",
 				"stats_error": "Couldn't load channel/ranking stats.",
 				"usage_note": "7TV doesn't track how many times an emote is actually sent in chat. The numbers above show how many channels have added this emote and how it ranks in 7TV's trending/top lists."
 			}

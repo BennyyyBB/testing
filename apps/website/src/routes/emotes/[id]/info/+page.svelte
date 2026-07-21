@@ -1,14 +1,26 @@
 <script lang="ts">
 	import EmoteTabs from "$/components/layout/emote-tabs.svelte";
+	import TrendingEmotesDialog from "$/components/dialogs/trending-emotes-dialog.svelte";
+	import { type DialogMode } from "$/components/dialogs/dialog.svelte";
 	import type { PageData } from "./$types";
 	import { gqlClient } from "$/lib/gql";
 	import { graphql } from "$/gql";
-	import type { EmoteScores } from "$/gql/graphql";
+	import { SortBy, type EmoteScores } from "$/gql/graphql";
 	import { t } from "svelte-i18n";
 	import { numberFormat, exactNumberFormat } from "$/lib/utils";
 	import { Users, ChartLineUp, Trophy } from "phosphor-svelte";
 
 	let { data }: { data: PageData } = $props();
+
+	let dialogMode: DialogMode = $state("hidden");
+	let dialogSortBy: SortBy = $state(SortBy.TrendingWeekly);
+	let dialogTitle = $state("");
+
+	function openTrendingDialog(sortBy: SortBy, title: string) {
+		dialogSortBy = sortBy;
+		dialogTitle = title;
+		dialogMode = "shown";
+	}
 
 	type InfoStats = {
 		channelCount: number;
@@ -45,8 +57,6 @@
 									trendingWeek
 									trendingMonth
 								}
-								trendingWeekRank: ranking(ranking: TRENDING_WEEKLY)
-								topAllTimeRank: ranking(ranking: TOP_ALL_TIME)
 							}
 						}
 					}
@@ -59,12 +69,70 @@
 			throw res.error;
 		}
 
+		const scores = res.data.emotes.emote.scores;
+
+		// compute the displayed rank from the exact same live-sorted list the "view list"
+		// dialog uses, instead of the separately (once-a-day) cached ranking() field, so the
+		// number shown here always matches what you see when you click through to the list
+		const [trendingWeekRank, topAllTimeRank] = await Promise.all([
+			scores.trendingWeek > 0 ? findLiveRank(SortBy.TrendingWeekly, id) : null,
+			scores.topAllTime > 0 ? findLiveRank(SortBy.TopAllTime, id) : null,
+		]);
+
 		return {
 			channelCount: res.data.emotes.emote.channels.totalCount,
-			scores: res.data.emotes.emote.scores,
-			trendingWeekRank: res.data.emotes.emote.trendingWeekRank ?? null,
-			topAllTimeRank: res.data.emotes.emote.topAllTimeRank ?? null,
+			scores,
+			trendingWeekRank,
+			topAllTimeRank,
 		};
+	}
+
+	// server allows perPage up to 250 (see EmoteQuery::search in apps/api). Two pages covers
+	// roughly the same "top ~500" scope the old ranking() cap had; beyond that we just show
+	// "not ranked" rather than paging indefinitely to find an exact number.
+	const RANK_LOOKUP_PER_PAGE = 250;
+	const RANK_LOOKUP_MAX_PAGES = 2;
+
+	async function findLiveRank(sortBy: SortBy, targetId: string): Promise<number | null> {
+		for (let page = 1; page <= RANK_LOOKUP_MAX_PAGES; page++) {
+			const res = await gqlClient()
+				.query(
+					graphql(`
+						query EmoteLiveRankLookup($sortBy: SortBy!, $page: Int!, $perPage: Int!) {
+							emotes {
+								search(
+									sort: { sortBy: $sortBy, order: DESCENDING }
+									page: $page
+									perPage: $perPage
+								) {
+									items {
+										id
+									}
+								}
+							}
+						}
+					`),
+					{ sortBy, page, perPage: RANK_LOOKUP_PER_PAGE },
+				)
+				.toPromise();
+
+			if (res.error || !res.data) {
+				throw res.error;
+			}
+
+			const items = res.data.emotes.search.items;
+			const index = items.findIndex((item) => item.id === targetId);
+
+			if (index !== -1) {
+				return (page - 1) * RANK_LOOKUP_PER_PAGE + index + 1;
+			}
+
+			if (items.length < RANK_LOOKUP_PER_PAGE) {
+				break;
+			}
+		}
+
+		return null;
 	}
 
 	let stats = $derived(loadStats(data.id));
@@ -88,8 +156,14 @@
 				<span class="label">{$t("pages.emote.info.used_by_channels")}</span>
 			</div>
 		</div>
-		{#if stats.trendingWeekRank !== null || stats.scores.trendingWeek > 0}
-			<div class="stat" title={$t("pages.emote.info.trending_tooltip")}>
+		{#if stats.trendingWeekRank !== null || (stats.scores?.trendingWeek ?? 0) > 0}
+			<button
+				type="button"
+				class="stat clickable"
+				title={$t("pages.emote.info.trending_tooltip")}
+				onclick={() =>
+					openTrendingDialog(SortBy.TrendingWeekly, $t("pages.emote.info.trending_this_week"))}
+			>
 				<ChartLineUp size="1.25rem" />
 				<div>
 					<span class="value">
@@ -100,16 +174,16 @@
 						{/if}
 					</span>
 					<span class="label">{$t("pages.emote.info.trending_this_week")}</span>
-					<span class="raw-score">
-						{$t("pages.emote.info.raw_score", {
-							values: { score: numberFormat().format(stats.scores.trendingWeek) },
-						})}
-					</span>
 				</div>
-			</div>
+			</button>
 		{/if}
-		{#if stats.topAllTimeRank !== null || stats.scores.topAllTime > 0}
-			<div class="stat" title={$t("pages.emote.info.top_all_time_tooltip")}>
+		{#if stats.topAllTimeRank !== null || (stats.scores?.topAllTime ?? 0) > 0}
+			<button
+				type="button"
+				class="stat clickable"
+				title={$t("pages.emote.info.top_all_time_tooltip")}
+				onclick={() => openTrendingDialog(SortBy.TopAllTime, $t("pages.emote.info.top_all_time"))}
+			>
 				<Trophy size="1.25rem" />
 				<div>
 					<span class="value">
@@ -120,13 +194,8 @@
 						{/if}
 					</span>
 					<span class="label">{$t("pages.emote.info.top_all_time")}</span>
-					<span class="raw-score">
-						{$t("pages.emote.info.raw_score", {
-							values: { score: numberFormat().format(stats.scores.topAllTime) },
-						})}
-					</span>
 				</div>
-			</div>
+			</button>
 		{/if}
 	{:catch}
 		<p class="stats-error">{$t("pages.emote.info.stats_error")}</p>
@@ -134,6 +203,8 @@
 </div>
 
 <p class="usage-note">{$t("pages.emote.info.usage_note")}</p>
+
+<TrendingEmotesDialog bind:mode={dialogMode} sortBy={dialogSortBy} title={dialogTitle} />
 
 <style lang="scss">
 	.navigation {
@@ -164,6 +235,18 @@
 			color: var(--primary);
 			cursor: help;
 
+			&.clickable {
+				border: none;
+				font: inherit;
+				text-align: left;
+				cursor: pointer;
+
+				&:hover,
+				&:focus-visible {
+					background-color: var(--bg-medium);
+				}
+			}
+
 			div {
 				display: flex;
 				flex-direction: column;
@@ -178,13 +261,6 @@
 			.label {
 				font-size: 0.75rem;
 				color: var(--text-light);
-			}
-
-			.raw-score {
-				margin-top: 0.2rem;
-				font-size: 0.7rem;
-				color: var(--text-light);
-				opacity: 0.75;
 			}
 		}
 	}
